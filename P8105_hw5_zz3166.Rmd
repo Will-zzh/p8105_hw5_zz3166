@@ -13,6 +13,9 @@ knitr::opts_chunk$set(echo = TRUE)
 library(broom)
 library(ggplot2)
 library(dplyr)
+library(tidyverse)  
+library(broom)      
+library(purrr)      
 ```
 
 # problem 1
@@ -69,7 +72,6 @@ plot(group_sizes, probabilities, type = 'b', pch = 19, col = 'blue',
      ylab = 'Probability of Shared Birthday',
      main = 'Probability of Shared Birthdays vs. Group Size')
 grid()
-
 ```
 Comment on the results:The probability of at least two people sharing a birthday grows rapidly as the group size increases. Around a group size of 23, the probability exceeds 50%, which is a well-known result in probability theory. This phenomenon is called the Birthday Paradox: despite there being 365 possible birthdays, a surprisingly small group size is needed to have a better-than-even chance of a shared birthday. As the group size continues to increase,the probability approaches 1, meaning it becomes almost certain that at least two people share a birthday in larger groups.
 
@@ -110,7 +112,6 @@ sigma <- 5
 mu_values <- 0:6
 num_simulations <- 5000
 alpha <- 0.05
-
 ```
 
 ## Simulation
@@ -146,7 +147,6 @@ for (mu in mu_values) {
     mu_true = mu
   )
 }
-
 ```
 
 ## Results
@@ -163,7 +163,6 @@ power_results <- all_results %>%
   summarise(
     power = mean(p_value < alpha)
   )
-
 ```
 
 ### Plot: Power vs. True Mean (\(\mu\))
@@ -179,7 +178,6 @@ ggplot(power_results, aes(x = mu_true, y = power)) +
     y = "Power"
   ) +
   theme_minimal()
-
 ```
 
 ### Power vs. True Mean (\( \mu \))
@@ -213,7 +211,6 @@ ggplot(mu_hat_results, aes(x = mu_true, y = mean_mu_hat)) +
     y = "Average Estimate of \u03BĈ"
   ) +
   theme_minimal()
-
 ```
 
 The second plot shows the "Average Estimate of \( \hat{\mu} \) vs. True Mean (\( \mu \))."
@@ -248,7 +245,6 @@ ggplot(mu_hat_combined, aes(x = mu_true)) +
     color = "Samples"
   ) +
   theme_minimal()
-
 ```
 
 The third plot shows the "Average Estimate of \( \hat{\mu} \) vs. True Mean (\( \mu \))" for both all samples and the subset of samples where the null hypothesis was rejected.
@@ -266,6 +262,244 @@ The third plot shows the "Average Estimate of \( \hat{\mu} \) vs. True Mean (\( 
 - **Rejected Null Hypotheses:** When considering only rejected null hypotheses, the average estimate of \( \hat{\mu} \) is higher than for all samples, due to selection bias. This bias occurs because we are more likely to reject the null when \( \hat{\mu} \) is farther from the hypothesized value.
 
 These conclusions provide insights into the behavior of hypothesis testing, demonstrating how power is influenced by effect size and how selection bias can impact our interpretation of estimates when only considering significant results.
+
+
+# Problem 3
+
+## Introduction
+
+The **Washington Post** has gathered data on homicides in 50 large U.S. cities and made the data available through a [GitHub repository](https://github.com/washingtonpost/data-homicides). The accompanying article provides context and insights into the data collected.
+
+In this analysis, we will:
+
+- Describe the raw homicide data.
+- Create a `city_state` variable (e.g., `"Baltimore, MD"`).
+- Summarize within cities to obtain:
+  - The total number of homicides.
+  - The number of unsolved homicides.
+- For Baltimore, MD:
+  - Estimate the proportion of unsolved homicides using `prop.test()`.
+  - Extract the estimated proportion and confidence intervals.
+- Run `prop.test()` for each city and extract proportions and confidence intervals.
+- Create a plot showing the estimates and confidence intervals for each city, organized by the proportion of unsolved homicides.
+
+## Data Loading
+
+We read the homicide data directly from the Washington Post's GitHub repository.
+```{r}
+# Read the data from the GitHub repository
+homicide_data <- read_csv("https://raw.githubusercontent.com/washingtonpost/data-homicides/master/homicide-data.csv")
+```
+
+## Data Description
+Let's explore the structure and contents of the dataset.
+```{r}
+# Display the first few rows of the data
+head(homicide_data)
+
+# Get a glimpse of the data structure
+glimpse(homicide_data)
+```
+
+Description of Key Variables:
+
+- `uid`: Unique identifier for each homicide case.
+- `reported_date`: Date the homicide was reported.
+- `victim_last`, `victim_first`, `victim_race`, `victim_age`, `victim_sex`: Information about the victim.
+- `city`: City where the homicide occurred.
+- `state`: State where the homicide occurred.
+- `disposition`: Status of the case (e.g., "Closed by arrest", "Open/No arrest", "Closed without arrest").
+
+## Data Preparation 
+
+### Creating `city_state` Variable
+
+We create a new variable `city_state` by combining the `city` and `state` columns.
+```{r}
+# Create a city_state variable
+homicide_data <- homicide_data %>%
+  mutate(city_state = paste0(city, ", ", state))
+```
+
+### Identifying Unsolved Homicides
+
+We define unsolved homicides as those with dispositions "Closed without arrest" or "Open/No arrest".
+```{r}
+# Define unsolved homicides
+unsolved_dispositions <- c("Closed without arrest", "Open/No arrest")
+
+# Add a logical column indicating whether a homicide is unsolved
+homicide_data <- homicide_data %>%
+  mutate(unsolved = disposition %in% unsolved_dispositions)
+```
+
+### Summarizing Data Within Cities
+
+We summarize the total number of homicides and the number of unsolved homicides for each city.
+```{r}
+# Summarize total homicides and unsolved homicides within each city
+city_summary <- homicide_data %>%
+  group_by(city_state) %>%
+  summarise(
+    total_homicides = n(),
+    unsolved_homicides = sum(unsolved)
+  ) %>%
+  ungroup()
+
+# Display the summary data
+head(city_summary)
+```
+
+
+## Analysis for Baltimore, MD
+
+We focus on the city of Baltimore, MD, to estimate the proportion of unsolved homicides.
+
+### Extracting Baltimore Data
+```{r}
+# Filter the summary data for Baltimore, MD
+baltimore_data <- city_summary %>%
+  filter(city_state == "Baltimore, MD")
+
+# Extract the number of unsolved homicides and total homicides
+baltimore_total <- baltimore_data$total_homicides
+baltimore_unsolved <- baltimore_data$unsolved_homicides
+```
+
+### Estimating Proportion of Unsolved Homicides
+We use the `prop.test()` function to estimate the proportion.
+```{r}
+# Perform the proportion test
+baltimore_prop_test <- prop.test(
+  x = baltimore_unsolved,
+  n = baltimore_total
+)
+
+# Tidy the prop.test output
+baltimore_tidy <- tidy(baltimore_prop_test)
+
+# Extract the estimated proportion and confidence intervals
+baltimore_results <- baltimore_tidy %>%
+  select(estimate, conf.low, conf.high) %>%
+  mutate(city_state = "Baltimore, MD") %>%
+  rename(
+    proportion_unsolved = estimate,
+    conf_low = conf.low,
+    conf_high = conf.high
+  )
+
+# Display the results
+baltimore_results
+```
+
+**Answer**: For **Baltimore, MD**, the estimated proportion of unsolved homicides is approximately **0.6456**, with a confidence interval ranging from **0.6276** to **0.6632**.
+
+
+## Analysis for All Cities
+We perform the same analysis for each city in the dataset.
+
+### Performing Proportion Tests
+```{r}
+# Apply prop.test to each city using map functions
+city_prop_tests <- city_summary %>%
+  mutate(
+    prop_test = map2(
+      unsolved_homicides,
+      total_homicides,
+      ~ prop.test(x = .x, n = .y)
+    )
+  )
+```
+
+### Tidying Test Outputs
+```{r}
+# Tidy the outputs of prop.test
+city_prop_tests <- city_prop_tests %>%
+  mutate(
+    tidy_test = map(prop_test, tidy)
+  )
+```
+
+### Extracting Estimates and Confidence Intervals
+```{r}
+# Unnest the tidy_test column to get a flat dataframe
+city_results <- city_prop_tests %>%
+  unnest(cols = c(tidy_test)) %>%
+  select(
+    city_state,
+    total_homicides,
+    unsolved_homicides,
+    estimate,
+    conf.low,
+    conf.high
+  ) %>%
+  rename(
+    proportion_unsolved = estimate,
+    conf_low = conf.low,
+    conf_high = conf.high
+  ) %>%
+  arrange(desc(proportion_unsolved))
+
+# Display the first few rows
+head(city_results)
+```
+
+**Answer**: The table shows the estimated proportion of unsolved homicides for each city, along with the corresponding confidence intervals. **Chicago, IL** has one of the highest proportions of unsolved homicides at **0.7359**.
+
+## Visualization
+We create a plot showing the estimated proportion of unsolved homicides and the confidence intervals for each city.
+
+### Preparing Data for Plotting
+We reorder the cities based on the proportion of unsolved homicides.
+```{r}
+# Reorder the city_state factor based on the proportion_unsolved
+city_results <- city_results %>%
+  mutate(
+    city_state = fct_reorder(city_state, proportion_unsolved)
+  )
+```
+
+### Plotting the Estimates and Confidence Intervals
+```{r}
+# Create the plot
+ggplot(city_results, aes(x = proportion_unsolved, y = city_state)) +
+  geom_point(color = 'steelblue') +
+  geom_errorbarh(aes(xmin = conf_low, xmax = conf_high), height = 0.3, color = 'gray60') +
+  labs(
+    x = "Proportion of Unsolved Homicides",
+    y = "City",
+    title = "Proportion of Unsolved Homicides by City",
+    caption = "Data Source: Washington Post Homicide Data"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    axis.text.y = element_text(size = 8),
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    plot.caption = element_text(hjust = 0)
+  )
+```
+
+**Answer**: The plot shows the estimated proportion of unsolved homicides for each city, along with **confidence intervals**. Cities like **Chicago, IL** and **New Orleans, LA** have higher proportions of unsolved homicides, suggesting systemic challenges in solving homicide cases in these areas.
+
+### Key Insights and Interpretation
+
+- **Variation Across Cities**: There is substantial variation in the proportion of unsolved homicides across different cities. For instance, **Chicago, IL** and **Baltimore, MD** have a high proportion of unsolved cases, suggesting potential issues in law enforcement or community cooperation.
+- **Confidence Intervals**: Confidence intervals provide a range of uncertainty around the estimated proportions. Cities with wide intervals may have smaller sample sizes, resulting in less precise estimates.
+- **Implications**: High proportions of unsolved homicides could indicate challenges related to resources, socio-economic factors, or other underlying issues. Policymakers and law enforcement agencies can use this information to allocate resources more effectively.
+
+**Summary**: The analysis reveals that several large cities struggle with high proportions of unsolved homicides. **Baltimore, MD** has approximately **64.56%** unsolved homicides, and cities like **Chicago, IL** and **New Orleans, LA** also have significant challenges. The visualization highlights disparities across cities, emphasizing the need for targeted interventions to improve homicide resolution rates.
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
